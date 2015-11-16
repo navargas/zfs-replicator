@@ -1,0 +1,17 @@
+replicator:
+  image: navargas/replicator
+  ports:
+    - "18211:22"
+  extra_hosts:
+    - "agent1:129.41.156.86"
+  environment:
+    - master=true
+    - agents=agent1
+    - replicate=/data
+  volumes:
+    - /path/to/keys/:/auth/
+    - /path/to/data/:/data/
+database:
+  image: navargas/simpledb
+  volumes:
+    - /path/to/data/:/data/
