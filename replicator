@@ -12,7 +12,11 @@ LOGFILE=$INSTALL_DIR/log
 VERSION="0.0.1"
 
 remote() {
-  ssh -i $RSA_FILE "$@"
+  ssh -o StrictHostKeyChecking=no -i $RSA_FILE "$@"
+}
+
+remote_file() {
+  scp -o StrictHostKeyChecking=no -q -i $RSA_FILE "$1" "$2"
 }
 
 file_check() {
@@ -71,8 +75,23 @@ replicator_daemon() {
     RSA_FILE=$INSTALL_DIR/clusters/$clusterName.rsa
     echo NODE: $NODE_FILE
     echo RSA: $RSA_FILE
+    # keep track of iterations to clean every n snapshots
+    iterations=0
     while [ 1 ] ; do
       sleep 5
+      iterations=$[iterations + 1]
+      # every 18 snapshots, delete all but two snapshots
+      # these numbers are arbitrary, but the idea is to
+      # not have clean up run on each loop
+      if [ $iterations -gt 18 ]; then
+        echo REMOVING SNAPSHOTS
+        while read -u10 i; do
+          set -- $i
+          echo on $1 >&2
+          remote $1 "replicator wipe-snapshots $clusterName"
+        done 10< $NODE_FILE
+        echo Snapshot clean finished
+      fi
       lastSnapshot=$(zfs list -t snapshot -o name | tail -n1)
       echo Last snapshot: $lastSnapshot
       [ ! -z $lastSnapshot ] && incremental="-i $lastSnapshot"
@@ -132,6 +151,11 @@ replicator_status() {
   echo good
 }
 
+remove_old_snapshots() {
+  # remove all snapshots from cluster $1
+  sudo zfs list -t snapshot -o name | grep ^$1@ | tail -n +16  | sudo xargs -n 1 zfs destroy -r
+}
+
 power_wash_all() {
   # run power_wash on all nodes
   while read -u10 i; do
@@ -159,18 +183,28 @@ power_wash() {
 }
 
 case "$1" in
-install)    install_node
-            ;;
---version)  echo $VERSION
-            ;;
-create)     create_new "$@"
-            ;;
-daemon)     replicator_daemon $2 $3
-            ;;
-wipe)       power_wash
-            ;;
-wipe-all)   power_wash_all
-            ;;
-*)          echo command $1 not found >&2
-            ;;
+install)
+  install_node
+  ;;
+--version)
+  echo $VERSION
+  ;;
+create)
+  create_new "$@"
+  ;;
+daemon)
+  replicator_daemon $2 $3
+  ;;
+wipe)
+  power_wash
+  ;;
+wipe-all)
+  power_wash_all
+  ;;
+wipe-snapshots)
+  remove_old_snapshots $2
+  ;;
+*)
+  echo command $1 not found >&2
+  ;;
 esac
