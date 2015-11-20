@@ -15,7 +15,7 @@ remote() {
   ssh -o StrictHostKeyChecking=no -i $RSA_FILE "$@"
 }
 
-remote_file() {
+remote_copy() {
   scp -o StrictHostKeyChecking=no -q -i $RSA_FILE "$1" "$2"
 }
 
@@ -42,7 +42,7 @@ install_replicator() {
   remote $1 "sudo chown -R \$USER $INSTALL_DIR"
   binfile=$0
   echo Duplicating script $binfile >&2
-  scp -q -i $RSA_FILE $binfile $1:/tmp/
+  remote_copy $binfile $1:/tmp/
   remote $1 "sudo mv /tmp/replicator /usr/bin/; \
              sudo chmod +x /usr/bin/replicator"
   if [ $(remote $1 "replicator --version") == "$VERSION" ]; then
@@ -129,8 +129,8 @@ create_new() {
                    -m $INSTALL_DIR/data/$clusterName \
                    $clusterName \
                    $INSTALL_DIR/volumes/$clusterName"
-    scp -q -i $RSA_FILE $NODE_FILE $1:/tmp/$clusterName
-    scp -q -i $RSA_FILE $RSA_FILE $1:/tmp/$clusterName.rsa #cooldemo,nosecure
+    remote_copy $NODE_FILE $1:/tmp/$clusterName
+    remote_copy $RSA_FILE $1:/tmp/$clusterName.rsa #cooldemo,nosecure
     remote $1 "sudo mv /tmp/$clusterName $INSTALL_DIR/clusters/; \
                sudo mv /tmp/$clusterName.rsa $INSTALL_DIR/clusters/"
     echo $2: >&2
