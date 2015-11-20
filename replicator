@@ -7,7 +7,6 @@
 
 NODE_FILE=nodes.list
 RSA_FILE=id_rsa
-INSTALL_TARGETS="Ubuntu 14.04"
 INSTALL_DIR="/etc/replicator"
 LOGFILE=$INSTALL_DIR/log
 VERSION="0.0.1"
