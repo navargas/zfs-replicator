@@ -84,6 +84,7 @@ replicator_daemon() {
       # these numbers are arbitrary, but the idea is to
       # not have clean up run on each loop
       if [ $iterations -gt 18 ]; then
+        iterations=0
         echo REMOVING SNAPSHOTS
         while read -u10 i; do
           set -- $i
@@ -155,7 +156,7 @@ replicator_status() {
 
 remove_old_snapshots() {
   # remove all snapshots from cluster $1
-  sudo zfs list -t snapshot -o name | grep ^$1@ | tail -n +16  | tac | sudo xargs -n 1 zfs destroy -r
+  sudo zfs list -t snapshot -o name | grep ^$1@ | tail -n +5  | tac | sudo xargs -n 1 zfs destroy -r
 }
 
 power_wash_all() {
