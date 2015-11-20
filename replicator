@@ -1,0 +1,177 @@
+#!/bin/bash
+
+# /etc/replicator       Root installation for replicator
+#  ├── tasks            Task information. Nodes, rsa key, etc
+#  ├── data             ZFS mountpoints
+#  └── volumes          ZFS data files
+
+NODE_FILE=nodes.list
+RSA_FILE=id_rsa
+INSTALL_TARGETS="Ubuntu 14.04"
+INSTALL_DIR="/etc/replicator"
+LOGFILE=$INSTALL_DIR/log
+VERSION="0.0.1"
+
+remote() {
+  ssh -i $RSA_FILE "$@"
+}
+
+file_check() {
+  # check for config files
+  if [ ! -f $NODE_FILE ]; then
+    echo $NODE_FILE not found >&2
+    exit 1
+  fi
+  if [ ! -f $RSA_FILE ]; then
+    echo $RSA_FILE not found >&2
+    exit 1
+  fi
+}
+
+install_replicator() {
+  # copy "replicator" script to each node
+  remote $1 "sudo mkdir $INSTALL_DIR;\
+             sudo mkdir $INSTALL_DIR/tasks;\
+             sudo mkdir $INSTALL_DIR/volumes;\
+             sudo mkdir $INSTALL_DIR/procs;\
+             sudo mkdir $INSTALL_DIR/clusters;\
+             sudo mkdir $INSTALL_DIR/data;" 2>/dev/null
+  remote $1 "sudo chown -R \$USER $INSTALL_DIR"
+  binfile=$0
+  echo Duplicating script $binfile >&2
+  scp -q -i $RSA_FILE $binfile $1:/tmp/
+  remote $1 "sudo mv /tmp/replicator /usr/bin/; \
+             sudo chmod +x /usr/bin/replicator"
+  if [ $(remote $1 "replicator --version") == "$VERSION" ]; then
+    echo ✔️    Node $2 success >&2
+  else
+    echo Failure on node $2 >&2
+  fi
+}
+
+install_node() {
+  # install_node -> install_replicator
+  file_check #check for rsa and conf file
+  while read -u10 i; do #ssh will eat &1, use &10 instead
+    set -- $i
+    echo 🐍     installing on $2 >&2
+    install_replicator $1 $2
+  done 10< $NODE_FILE
+}
+
+replicator_daemon() {
+  # replicator daemon runs only on the master node
+  clusterName=$1
+  masterNode=$2
+  if [ -z $1 ] || [ -z $2 ]; then
+    echo Usage: replicator daemon volume_name master_node >&2
+    exit 1
+  fi
+  (
+    NODE_FILE=$INSTALL_DIR/clusters/$clusterName
+    RSA_FILE=$INSTALL_DIR/clusters/$clusterName.rsa
+    echo NODE: $NODE_FILE
+    echo RSA: $RSA_FILE
+    while [ 1 ] ; do
+      sleep 5
+      lastSnapshot=$(zfs list -t snapshot -o name | tail -n1)
+      echo Last snapshot: $lastSnapshot
+      [ ! -z $lastSnapshot ] && incremental="-i $lastSnapshot"
+      echo Incrimental: $incremental
+      sudo zfs snapshot $clusterName@$(date +%s)
+      while read -u10 i; do
+        set -- $i
+        echo Working on node $2
+        if [ "$2" == "$masterNode" ]; then
+          echo Skipping self
+          continue
+        fi
+        echo Sending to $1
+        sudo zfs send $incremental -R $(sudo zfs list -t snapshot -o name | tail -n1) | \
+          remote $1 "sudo zfs recv -F $clusterName"
+      done 10< $NODE_FILE
+    done
+  ) >$LOGFILE 2>&1 &
+  echo $! > $INSTALL_DIR/procs/$clusterName
+}
+
+create_new() {
+  # create a new replication instance
+  if [ -z $2 ] || [ -z $3 ]; then
+    echo Usage: replicator create cluster_name master_node >&2
+    exit 1
+  fi
+  clusterName=$2
+  master=$3
+  while read -u10 i; do
+    set -- $i
+    echo Creating $clusterName disk on $2 >&2
+    remote $1 "sudo dd if=/dev/zero of=$INSTALL_DIR/volumes/$clusterName bs=1024 count=$[1024 * 128]; \
+               sudo zpool create \
+                   -m $INSTALL_DIR/data/$clusterName \
+                   $clusterName \
+                   $INSTALL_DIR/volumes/$clusterName"
+    scp -q -i $RSA_FILE $NODE_FILE $1:/tmp/$clusterName
+    scp -q -i $RSA_FILE $RSA_FILE $1:/tmp/$clusterName.rsa #cooldemo,nosecure
+    remote $1 "sudo mv /tmp/$clusterName $INSTALL_DIR/clusters/; \
+               sudo mv /tmp/$clusterName.rsa $INSTALL_DIR/clusters/"
+    echo $2: >&2
+    remote $1 "sudo zpool list"
+  done 10< $NODE_FILE
+  # Start master daemon
+  while read -u10 i; do
+    set -- $i
+    if [ "$2" == "$master" ]; then
+      echo Starting daemon on master $1 >&2
+      remote $1 "sudo replicator daemon $clusterName $master"
+      continue
+    fi
+  done 10< $NODE_FILE
+}
+
+replicator_status() {
+  echo good
+}
+
+power_wash_all() {
+  # run power_wash on all nodes
+  while read -u10 i; do
+    set -- $i
+    echo Wiping $1 >&2
+    remote $1 "replicator wipe"
+  done 10< $NODE_FILE
+}
+
+power_wash() {
+  # must run locally on node
+  set -- $i
+  if [ "$(ls -A $INSTALL_DIR/procs/ 2>/dev/null)" ]; then
+    echo Process found >&2
+    for i in "$INSTALL_DIR/procs/*"; do
+      echo killing $i : $(cat $i) >&2
+      sudo kill $(cat $i)
+    done
+  fi
+  echo Remaining Procs: $(ps -ef | grep 'replicator daemon' | grep -v grep)
+  echo Destroying pools
+  [ $(sudo zpool list | wc -l) -gt 1 ] && \
+             sudo zpool list | awk '{print $1}' | tail -n +2 | sudo xargs -L 1 zpool destroy
+  [[ $INSTALL_DIR == *replicator* ]] && sudo rm -rf $INSTALL_DIR
+}
+
+case "$1" in
+install)    install_node
+            ;;
+--version)  echo $VERSION
+            ;;
+create)     create_new "$@"
+            ;;
+daemon)     replicator_daemon $2 $3
+            ;;
+wipe)       power_wash
+            ;;
+wipe-all)   power_wash_all
+            ;;
+*)          echo command $1 not found >&2
+            ;;
+esac
