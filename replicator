@@ -124,7 +124,9 @@ create_new() {
   while read -u10 i; do
     set -- $i
     echo Creating $clusterName disk on $2 >&2
-    remote $1 "sudo dd if=/dev/zero of=$INSTALL_DIR/volumes/$clusterName bs=1024 count=$[1024 * 128]; \
+    remote $1 "sudo dd if=/dev/zero \
+                       of=$INSTALL_DIR/volumes/$clusterName \
+                       bs=1024 count=$[1024 * 128] 2>/dev/null; \
                sudo zpool create \
                    -m $INSTALL_DIR/data/$clusterName \
                    $clusterName \
@@ -178,7 +180,7 @@ power_wash() {
   echo Remaining Procs: $(ps -ef | grep 'replicator daemon' | grep -v grep)
   echo Destroying pools
   [ $(sudo zpool list | wc -l) -gt 1 ] && \
-             sudo zpool list | awk '{print $1}' | tail -n +2 | sudo xargs -L 1 zpool destroy
+             sudo zpool list | awk '{print $1}' | tail -n +16 | sudo xargs -L 1 zpool destroy
   [[ $INSTALL_DIR == *replicator* ]] && sudo rm -rf $INSTALL_DIR
 }
 
