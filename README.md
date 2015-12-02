@@ -32,6 +32,6 @@ To create a new replicated volume run
 ```
 ./replicator create volume_name alias_of_master
 ```
-The volumes will be mounted at /etc/replicator/data/**volume_name**.
+The volumes will be mounted at /var/replicator/data/**volume_name**.
 
 Changes will flow from the master to the other nodes on a set interval.

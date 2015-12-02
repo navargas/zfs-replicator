@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# /etc/replicator       Root installation for replicator
-#  ├── tasks            Task information. Nodes, rsa key, etc
+# /var/replicator       Root installation for replicator
+#  ├── clusters         Node lists
 #  ├── data             ZFS mountpoints
+#  ├── procs            PIDs
 #  └── volumes          ZFS data files
 
 NODE_FILE=nodes.list
 RSA_FILE=id_rsa
-INSTALL_DIR="/etc/replicator"
+INSTALL_DIR="/var/replicator"
 LOGFILE=$INSTALL_DIR/log
 VERSION="0.0.1"
 
